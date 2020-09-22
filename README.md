@@ -1,4 +1,4 @@
-[license]: https://github.com/cakuba/DDeep3m/blob/master/LICENSE
+[license]: https://github.com/cakuba/Boosting_multi-label_semantic_segmentation/blob/master/LICENSE
 [weights]: https://1drv.ms/u/s!Av8_YAWBQpg7eZMDQ0OMwGG3qTk
 
 # Boosting Multi-label Semantic Segmentation
