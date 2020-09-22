@@ -1,0 +1,2 @@
+# Boosting_multi-label_semantic_segmentation
+A boosting framework, consisting of a DCNN for multi-label semantic segmentation with a customized logarithmic-Dice loss function, a fusion module combining the original labels and the corresponding predictions from the DCNN, and a boosting algorithm to sequentially update the sample weights during network training iterations, is proposed to systematically improve the quality of the annotated data, resulting in eventually the performance improvement of the segmentation tasks
