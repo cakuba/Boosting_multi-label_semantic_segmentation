@@ -1,4 +1,4 @@
-# 导入函数库
+# To initialize the libaries used in multi-label U-Net
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Model
@@ -12,11 +12,11 @@ from tensorflow.python.ops import math_ops
 
 def real_dice_coef_loss(y_true, y_pred):
     """
-    计算模型预测的分割mask与标注mask之间的Dice系数值
+    to compute the Dice Coef. between the human annoation and network prediction 
     
-    输入:
-       y_true - 二值化的图像人工标注，格式为[batch_size, width, height]
-       y_pred - 模型预测的图像像素分类结果 ([0~1]), ，格式为[batch_size, width, height]
+    Argumetns:
+       y_true - human annotion in the format of [batch_size, width, height]
+       y_pred - network prediction in the format of [batch_size, width, height] 
     
     """
     
@@ -31,16 +31,20 @@ def real_dice_coef_loss(y_true, y_pred):
     
     return dice
 
-# 自定义损失函数
+# A customized Dice-logarithmic loss function
 def customized_loss_fn(target_soma, target_vessel, output_soma, output_vessel, mode=1, isWeighted=False, sample_weights=None):
-    # 我们希望在多标签输出中，同一目标之间的dice尽量大，不同目标之间的dice尽量小
+    #
+    # we hope that in the output of multi-label segmentation network, the dice values between the prediction and annoation 
+    #    should be maximized for the same object, while simultaneously be minimized across different objects
+    #
+    
     soma_loss = real_dice_coef_loss(target_soma, output_soma)
     vessel_loss = real_dice_coef_loss(target_vessel, output_vessel)
     soma_vs_vessel_loss = real_dice_coef_loss(target_soma, output_vessel)
     vessel_vs_soma_loss = real_dice_coef_loss(target_vessel, output_soma)
       
     if mode == 1:
-        # log求和
+        #  summation of weighted/non-weighted dice-logarithmic loss
         if isWeighted:
             loss_soma = -math_ops.log(soma_loss)-math_ops.log(1-soma_vs_vessel_loss)
             loss_vessel = -math_ops.log(vessel_loss)-math_ops.log(1-vessel_vs_soma_loss)
@@ -49,17 +53,17 @@ def customized_loss_fn(target_soma, target_vessel, output_soma, output_vessel, m
             loss = -math_ops.log(soma_loss)-math_ops.log(vessel_loss)
             loss += -math_ops.log(1-soma_vs_vessel_loss)-math_ops.log(1-vessel_vs_soma_loss)
     elif mode == 2:
-        # 借鉴交叉熵函数1
+        # variation of logarithmic loss
         loss = -tf.math.multiply(soma_loss,math_ops.log(1-soma_vs_vessel_loss))-math_ops.log(soma_loss)
         loss = -tf.math.multiply(vessel_loss,math_ops.log(1-vessel_vs_soma_loss))-math_ops.log(vessel_loss)
     else:
-        # 借鉴交叉熵函数2
+        # another variation of logarithmic loss
         loss = -tf.math.multiply(soma_loss,math_ops.log(1-soma_vs_vessel_loss))-tf.math.multiply(1+soma_vs_vessel_loss,math_ops.log(soma_loss))
         loss = -tf.math.multiply(vessel_loss,math_ops.log(1-vessel_vs_soma_loss))-tf.math.multiply(1+vessel_vs_soma_loss,math_ops.log(vessel_loss))                 
     return loss
 
 def MultiLabel_UNet(img_width=256,img_height=256,dropout=0.2,seed=2020,show_summary=False,loss_mode=1,isWeighted=False,sample_weights=None):
-    # 初始化权重
+    # to randomly initialize the weights
     kernel_initializer=initializers.he_normal(seed=seed)
 
     inputs = Input((img_width, img_height, 1),name='input')
@@ -83,9 +87,9 @@ def MultiLabel_UNet(img_width=256,img_height=256,dropout=0.2,seed=2020,show_summ
     conv4_1 = Conv2D(512, 3, activation='relu', padding='same', kernel_initializer=kernel_initializer)(conv4_0)
     bn4 = BatchNormalization()(conv4_1)
     drop4 = Dropout(dropout)(bn4)
-    # 下采样结束
+    # end of down-sampling
     # -------------------------------------------------------------------------------------------------------------
-    # 开始上采样
+    # start of up-sampling
 
     up5 = Conv2D(256, 2, activation='relu', padding='same', kernel_initializer=kernel_initializer)(UpSampling2D(size=(2, 2))(drop4))
     merge5 = concatenate([conv3_1, up5], axis=3)
@@ -110,7 +114,7 @@ def MultiLabel_UNet(img_width=256,img_height=256,dropout=0.2,seed=2020,show_summ
     output_vessel = Conv2D(1, 1, activation='sigmoid', name='output_vessel')(conv7)
 
     # -------------------------------------------------------------------------------------------------------------
-    # 定义标注数据作为模型输入，用于自定义损失函数的计算
+    # format of input data and the definition of loss layer
     target_soma = Input((img_width, img_height, 1), name='input_soma')
     target_vessel = Input((img_width, img_height, 1), name='input_vessel')
     customized_loss = Lambda(lambda x: customized_loss_fn(*x,loss_mode,isWeighted,sample_weights), name="customized_loss")(
