@@ -1,24 +1,25 @@
 from keras.preprocessing.image import ImageDataGenerator
 def augumented_training_data(orig_data_dir, new_data_dir, instances=2000, size=(1024,1024), random_seed=2020):
     """
-    基于少量训练数据集和对应的标注数据，在new_data_dir中生成更多augumented data；
-    默认生成2000个图像数据
+    To generate more training data based on augmentation algorithms in Keras. By default,
+    a total number of 2000 instances will be generated.
     
-    orig_data_dir: data/Train
-    new_data_dir:  data/Train_aug
-    instances: 增强后的图像数量
-    size: 增强后的图像大小
+    Arguments:
+        orig_data_dir: data/Train
+        new_data_dir:  data/Train_aug
+        instances: number of instances after augmentation
+        size: image size after augmentation
     
     [ref] https://keras.io/api/models/model_training_apis/#fit-method
     """
     
-    # 参数设置
+    # parameters used during augmentation
     batch_size = 64
     epochs = int(instances/batch_size)
     
-    # 创建new_data_dir目录结构
+    # to create the directory of augmentation data
     os.makedirs(new_data_dir, exist_ok=True)
-    assert os.path.isdir(new_data_dir), "待创建的文件夹不在系统目录中"
+    assert os.path.isdir(new_data_dir), "directory to save augmentation instances does not exist!"
     
     rmtree(new_data_dir)
     os.makedirs(os.path.join(new_data_dir, 'images/0'))
