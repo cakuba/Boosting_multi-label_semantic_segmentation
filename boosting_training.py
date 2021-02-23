@@ -3,23 +3,23 @@ import time
 import pickle
 import numpy as np
 
-# 设置模型训练使用的GPU参数
+# Configuration on GPU ID usage
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-# 图像大小
+# image size
 width = 1024
 height = 1024
 
-# 保存模型参数
+# if model weights should be saved
 model_saved = True
 
-# 模型预测结果的阈值；即大于0.5被认为是分割目标
+# threshold of network prediction
 pred_bin_thres = 0.5
 
-# 提升轮数
+# number boosting iterations
 epochs_of_boosting = 10
 
-# 希望通过提升达到的dice阈值
+# threshold of boosting performance
 boost_dice_soma_thres = 0.99
 boost_dice_vessel_thres = 0.99
 boost_soma_percent = 1.0
@@ -32,15 +32,15 @@ fusion_model_vessel_thres = 0.90
 fusion_dice_soma_thres = 0.99
 fusion_dice_vessel_thres = 0.99
 
-# 数据融合方法
+# fusion strategy
 from utils import annotation_fusion
 fusion_mode = 3    # 2-以prediction为主； 3-以annotation为主
 
 from data_processing import get_data_gold, get_data_orig
-# 数据预处理（直方图均衡化+拉伸）
+# data preprocessing (histogram-equalization and stretching)
 preprocessing = True
 
-# 初始化训练所需要的数据 (规范化处理后)
+# training/test dataset
 gold_images, gold_soma_labels, gold_vessel_labels = get_data_gold('../data/gold',
                                                     size=(width, height),preprocessing=preprocessing)
 train_images, train_soma_labels, train_vessel_labels = get_data_orig('../data/Train_aug',
@@ -53,14 +53,14 @@ test_images, test_soma_labels, test_vessel_labels = get_data_orig('../data/Test'
 nums_of_samples = len(train_images)
 print("A total number of %d images fed into the network training..." % nums_of_samples)
 
-# 样本权重初始化设置
-#  模型接受的样本权重格式为
+# sample-weights initialization
+#   sample-weights format for the model
 #     {'soma':np.array(), 'vessel':np.array()}
 #
 weights_of_samples = {'soma':np.ones(nums_of_samples,)/nums_of_samples,
                       'vessel':np.ones(nums_of_samples,)/nums_of_samples}
 
-# 训练数据维度更新，适合模型输入
+# training data format
 train_images = np.expand_dims(train_images, axis=-1)
 train_soma_labels = np.expand_dims(train_soma_labels, axis=-1)
 train_vessel_labels = np.expand_dims(train_vessel_labels, axis=-1)
@@ -69,7 +69,7 @@ valid_images = np.expand_dims(valid_images, axis=-1)
 valid_soma_labels = np.expand_dims(valid_soma_labels, axis=-1)
 valid_vessel_labels = np.expand_dims(valid_vessel_labels, axis=-1)
 
-# 导入U-Net模型
+# libraries and multi-label U-Net
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import backend as K
@@ -84,7 +84,7 @@ from UNet import MultiLabel_UNet, real_dice_coef_loss
 from utils import sample_weights_boosted
 from numpy.random import randint
 
-# 自定义模型参数
+# network parameters
 img_width=1024
 img_height=1024
 dropout=0.5
@@ -108,7 +108,7 @@ for epoch in range(epochs_of_boosting):
     checkpoint = ModelCheckpoint('./weights/'+weights_file,monitor='val_loss',
                                 verbose=1, mode='min', save_best_only=True)
 
-    # 模型训练
+    # network training
     history = model.fit([train_images, train_soma_labels, train_vessel_labels],
                     batch_size=batch_size,
                     epochs=epochs_of_training,
@@ -129,11 +129,11 @@ for epoch in range(epochs_of_boosting):
             pickle.dump(history.history, f)
         print("Model training history successfully saved!")
 
-    # 训练集的权重提升和人工标注数据融合
+    # fusion and boosting start from here
     train_soma_labels_pred = np.zeros(train_soma_labels.shape)
     train_vessel_labels_pred = np.zeros(train_vessel_labels.shape)
 
-    # 模型预测 (note: limited by GPU memory)
+    # network prediction (note: limited by GPU memory)
     for i in range(int(nums_of_samples/10)):
         start = 10*i
         end = 10*(i+1)
@@ -151,7 +151,7 @@ for epoch in range(epochs_of_boosting):
 
     num_fusion_soma = num_fusion_vessel = 0
     for i in range(nums_of_samples):
-        # 数据融合; 某张图像结果不太好且整个模型的结果足够好
+        # fusion
         if train_soma_dice[i] <= fusion_dice_soma_thres and np.mean(train_soma_dice) > fusion_model_soma_thres:
             pred_ = np.squeeze(train_soma_labels_pred)[i]
             pred_[pred_>=0.5] = 1
@@ -167,7 +167,7 @@ for epoch in range(epochs_of_boosting):
     print("A total number of %d (soma) and %d (vessel) annotated labels are merged with model predictions!"
                          %(num_fusion_soma, num_fusion_vessel))
 
-    # 权重提升
+    # boosting
     weights_of_samples['soma'], w = sample_weights_boosted(train_soma_dice, weights_of_samples['soma'],
                                                            percent=boost_soma_percent, thres=boost_dice_soma_thres)
     print("BOOSTED SOMA WEIGHTS \n",weights_of_samples['soma'])
@@ -178,12 +178,12 @@ for epoch in range(epochs_of_boosting):
     vessel_weight_of_epoch.append(w)
     print("Trainig sample weights are successfully boosted! ")
 
-    # 评估模型在测试集和金标数据上的性能，作为提升框架的性能评估指标
+    # performance evaluation on test dataset
     nums_of_test_samples = len(test_images)
     test_soma_labels_pred = np.zeros(test_soma_labels.shape)
     test_vessel_labels_pred = np.zeros(test_vessel_labels.shape)
 
-    # 模型预测 (note: limited by GPU memory; would be updated in better GPUs)
+    # network prediction (note: limited by GPU memory; would be updated in better GPUs)
     for i in range(int(nums_of_test_samples/10)):
         start = 10*i
         end = 10*(i+1)
@@ -198,14 +198,14 @@ for epoch in range(epochs_of_boosting):
     test_soma_dice = real_dice_coef_loss(test_soma_labels,test_soma_labels_pred)
     test_vessel_dice = real_dice_coef_loss(test_vessel_labels,test_vessel_labels_pred)
 
-    # 金标数据10张，可直接预测
+    # gold standard for evaluation
     out = model.predict([np.expand_dims(gold_images, axis=-1), np.expand_dims(gold_soma_labels, axis=-1),
                          np.expand_dims(gold_vessel_labels, axis=-1)])
     gold_soma_labels_pred, gold_vessel_labels_pred = out[0][0], out[0][1]
     gold_soma_dice = real_dice_coef_loss(gold_soma_labels, np.squeeze(gold_soma_labels_pred))
     gold_vessel_dice = real_dice_coef_loss(gold_vessel_labels, np.squeeze(gold_vessel_labels_pred))
 
-    # 保存模型性能
+    # model weights 
     if model_saved:
         performance_file = os.path.join('./weights', 'performance-epoch-'+str(epoch+1).zfill(2)+'.dat')
         with open(performance_file,'wb') as f:
